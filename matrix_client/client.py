@@ -94,10 +94,7 @@ class MatrixClient(object):
         self.sync_filter = '{ "room": { "timeline" : { "limit" : %i } } }' \
             % sync_filter_limit
         self.sync_thread = None
-        self.should_listen = False
 
-        """ Time to wait before attempting a /sync request after failing."""
-        self.bad_sync_timeout_limit = 60 * 60
         self.rooms = {
             # room_id: Room
         }
@@ -339,39 +336,6 @@ class MatrixClient(object):
         """
         self._sync(timeout_ms)
 
-    def listen_forever(self, timeout_ms=30000, exception_handler=None):
-        """ Keep listening for events forever.
-
-        Args:
-            timeout_ms (int): How long to poll the Home Server for before
-               retrying.
-            exception_handler (func(exception)): Optional exception handler
-               function which can be used to handle exceptions in the caller
-               thread.
-        """
-        bad_sync_timeout = 5000
-        self.should_listen = True
-        while (self.should_listen):
-            try:
-                self._sync(timeout_ms)
-                bad_sync_timeout = 5
-            except MatrixRequestError as e:
-                logger.warning("A MatrixRequestError occured during sync.")
-                if e.code >= 500:
-                    logger.warning("Problem occured serverside. Waiting %i seconds",
-                                   bad_sync_timeout)
-                    sleep(bad_sync_timeout)
-                    bad_sync_timeout = min(bad_sync_timeout * 2,
-                                           self.bad_sync_timeout_limit)
-                else:
-                    raise e
-            except Exception as e:
-                logger.exception("Exception thrown during sync")
-                if exception_handler is not None:
-                    exception_handler(e)
-                else:
-                    raise
-
     def start_listener_thread(self, timeout_ms=30000, exception_handler=None):
         """ Start a listener thread to listen for events in the background.
 
@@ -383,22 +347,19 @@ class MatrixClient(object):
                thread.
         """
         try:
-            thread = Thread(target=self.listen_forever,
-                            args=(timeout_ms, exception_handler))
-            thread.daemon = True
-            self.sync_thread = thread
-            self.should_listen = True
-            thread.start()
-        except:
+            self.sync_thread = SyncThread(self, timeout_ms, exception_handler)
+            self.sync_thread.start()
+        except Exception as e:
             e = sys.exc_info()[0]
             logger.error("Error: unable to start thread. %s", str(e))
 
-    def stop_listener_thread(self):
+    def stop_listener_thread(self, blocking=True):
         """ Stop listener thread running in the background
         """
         if self.sync_thread:
-            self.should_listen = False
-            self.sync_thread.join()
+            self.sync_thread.should_listen = False
+            if blocking:
+                self.sync_thread.join()
             self.sync_thread = None
 
     def upload(self, content, content_type):
@@ -448,7 +409,8 @@ class MatrixClient(object):
                 current_room._mkmembers(
                     User(self.api,
                          state_event["state_key"],
-                         state_event["content"].get("displayname", None))
+                         state_event["content"].get("displayname", None),
+                         state_event["content"].get("avatar_url", None))
                 )
 
         for listener in current_room.state_listeners:
@@ -533,3 +495,53 @@ class MatrixClient(object):
             return True
         except MatrixRequestError:
             return False
+
+
+class SyncThread(Thread):
+
+    def __init__(self, client, timeout_ms, exception_handler):
+        # init thread
+        Thread.__init__(self)
+        self.daemon = True
+
+        self.client = client
+        self.should_listen = True
+        self.timeout_ms = timeout_ms
+        self.exception_handler = exception_handler
+        # Time to wait before attempting a /sync request after failing.
+        self.bad_sync_timeout_limit = 60 * 60
+
+    def listen_forever(self, timeout_ms=30000, exception_handler=None):
+        """ Keep listening for events forever.
+
+        Args:
+            timeout_ms (int): How long to poll the Home Server for before
+               retrying.
+            exception_handler (func(exception)): Optional exception handler
+               function which can be used to handle exceptions in the caller
+               thread.
+        """
+        bad_sync_timeout = 5000
+        while (self.should_listen):
+            try:
+                self.client._sync(timeout_ms)
+                bad_sync_timeout = 5
+            except MatrixRequestError as e:
+                logger.warning("A MatrixRequestError occured during sync.")
+                if e.code >= 500:
+                    logger.warning("Problem occured serverside. Waiting %i seconds",
+                                   bad_sync_timeout)
+                    sleep(bad_sync_timeout)
+                    bad_sync_timeout = min(bad_sync_timeout * 2,
+                                           self.bad_sync_timeout_limit)
+                else:
+                    raise e
+            except Exception as e:
+                logger.exception("Exception thrown during sync")
+                if exception_handler is not None:
+                    exception_handler(e)
+                else:
+                    raise
+
+    def run(self):
+        self.listen_forever(self.timeout_ms, self.exception_handler)

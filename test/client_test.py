@@ -99,11 +99,13 @@ def test_state_event():
 
     # test member event
     ev["type"] = "m.room.member"
-    ev["content"] = {'membership': 'join', 'displayname': 'stereo'}
+    ev["content"] = {'membership': 'join', 'displayname': 'stereo',
+                     'avatar_url': 'mxc://matrix.org/XXX'}
     ev["state_key"] = "@stereo:xxx.org"
     client._process_state_event(ev, room)
     assert len(room._members) == 1
-    assert room._members[0].user_id == "@stereo:xxx.org"
+    assert list(room._members.values())[0].user_id == "@stereo:xxx.org"
+    assert list(room._members.values())[0].avatar_url == "http://example.com/_matrix/media/r0/download/matrix.org/XXX"
 
 
 def test_get_user():

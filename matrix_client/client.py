@@ -99,6 +99,7 @@ class MatrixClient(object):
         self.rooms = {
             # room_id: Room
         }
+        self.user_id = None
         if token:
             self.user_id = user_id
             self._sync()
@@ -470,6 +471,9 @@ class MatrixClient(object):
             room = self.rooms[room_id]
             room.prev_batch = sync_room["timeline"]["prev_batch"]
 
+            # TODO handle unread messages look into https://github.com/matrix-org/matrix-react-sdk/blob/f58d89ef802f28bbab851fe63c3e6ff332394a5d/src/Unread.js#L41
+            # print("Notifications: %s" % sync_room["unread_notifications"])
+
             for event in sync_room["state"]["events"]:
                 event['room_id'] = room_id
                 self._process_state_event(event, room)
@@ -486,7 +490,14 @@ class MatrixClient(object):
                     ):
                         listener['callback'](event)
 
+            room.has_unread_messages = None
+
             for event in sync_room['ephemeral']['events']:
+                if room.has_unread_messages is None:
+                    room.has_unread_messages = self.has_unread_messages(
+                        event, sync_room["timeline"]["events"])
+                    print("Room %s unread: %s" % (room.name or room_id,
+                                                  room.has_unread_messages))
                 event['room_id'] = room_id
                 room._put_ephemeral_event(event)
 
@@ -496,6 +507,41 @@ class MatrixClient(object):
                         listener['event_type'] == event['type']
                     ):
                         listener['callback'](event)
+
+    def read_up_to_id(self, event):
+        ret = None
+        for k, v in event["content"].items():
+            if "m.read" in v and self.user_id in v["m.read"]:
+                ret = k
+                break
+        return ret
+
+    def has_unread_messages(self, event, timeline):
+        read_up_to_id = self.read_up_to_id(event)
+
+        if (timeline and timeline[-1:][0].get("sender") and
+                timeline[-1:][0]["sender"] == self.user_id):
+            return False
+        for ev in timeline:
+            if ev["event_id"] == read_up_to_id:
+                return False
+            elif self.event_triggers_unread_count(ev) and ev["type"] == "m.room.member":
+                return True
+        return True
+
+    def event_triggers_unread_count(self, ev):
+        if ev["sender"] == self.user_id:
+            return False
+        elif ev["type"] == 'm.room.member':
+            return False
+        elif ev["type"] == 'm.call.answer':
+            return False
+        elif ev["type"] == 'm.call.hangup':
+            return False
+        elif (ev["type"] == 'm.room.message' and
+              ev["content"]["msgtype"] == 'm.notify'):
+            return False
+        return True
 
     def get_user(self, user_id):
         """ Return a User by their id.

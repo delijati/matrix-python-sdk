@@ -34,6 +34,7 @@ class Room(object):
         self.canonical_alias = None
         self.aliases = []
         self.topic = None
+        self.has_unread_messages = None
         self._prev_batch = None
         self._members = collections.OrderedDict({})
 
@@ -627,6 +628,25 @@ class Room(object):
         except MatrixRequestError:
             return False
 
+    def get_room_messages(self, reverse=False, limit=10, start=None):
+        """Get messages.
+
+        Args:
+            reverse (bool): When false messages will be filled in their original
+                order (old to new), otherwise the order will be reversed (new to old).
+            limit (int): Number of messages.
+            start (str): The token to start returning events from.
+        """
+        res = self.client.api.get_room_messages(self.room_id, start,
+                                                direction="b", limit=limit)
+        end = res['end']
+        events = res["chunk"]
+        if not reverse:
+            events = reversed(events)
+        for event in events:
+            self._put_event(event)
+        return end
+
     @property
     def prev_batch(self):
         return self._prev_batch
@@ -634,3 +654,124 @@ class Room(object):
     @prev_batch.setter
     def prev_batch(self, prev_batch):
         self._prev_batch = prev_batch
+
+    def send_call_invite(self, sdp, lifetime=60000, version=0,
+                         call_id=None, timestamp=None):
+        """
+        This event is sent by the caller when they wish to establish a call.
+
+        Args:
+            sdp (str):      The session description object.
+            lifetime (int): Optional. The time in milliseconds that the invite
+                            is valid for. Once the invite age exceeds this
+                            value, clients should discard it. They should also
+                            no longer show the call as awaiting an answer in
+                            the UI.
+            version (int):  Optional. The version of the VoIP specification
+                            this message adheres to. This specification is
+                            version 0.
+            call_id (str):  Optional. A unique identifer for the call.
+            timestamp(int): Optional. Set origin_server_ts (For application
+                            services only)
+        """
+        if call_id is None:
+            call_id = uuid4().hex
+
+        content_pack = {
+            "call_id": call_id,
+            "lifetime": lifetime,
+            "offer": {
+                "sdp": sdp,
+                "type": "offer"
+            },
+            "version": 0
+        }
+        return self.client.api.send_message_event(self.room_id,
+                                                  "m.call.invite",
+                                                  content_pack,
+                                                  timestamp=timestamp)
+
+    def send_call_candidates(self, call_id, candidates, version=0,
+                             timestamp=None):
+        """
+        This event is sent by callers after sending an invite and by the callee
+        after answering. Its purpose is to give the other party additional ICE
+        candidates to try using to communicate.
+
+        Args:
+            call_id (str): The ID of the call this event relates to.
+            candidates (list): Array of objects describing the candidates.
+            version (int): Optional. The version of the VoIP specification this
+                           messages adheres to. This specification is version 0.
+            timestamp(int): Optional. Set origin_server_ts (For application
+                            services only)
+        """
+        content_pack = {
+            "call_id": call_id,
+            "candidates": candidates,
+            "version": version
+        }
+        return self.client.api.send_message_event(self.room_id,
+                                                  "m.call.candidates",
+                                                  content_pack,
+                                                  timestamp=timestamp)
+
+    def send_call_answer(self, sdp, call_id, lifetime=60000, version=0,
+                         timestamp=None):
+        """
+        This event is sent by the callee when they wish to answer the call.
+
+        Args:
+            sdp (str):      The session description object.
+            call_id (str):  A unique identifer for the call.
+            lifetime (int): Optional. The time in milliseconds that the invite
+                            is valid for. Once the invite age exceeds this
+                            value, clients should discard it. They should also
+                            no longer show the call as awaiting an answer in
+                            the UI.
+            version (int):  Optional. The version of the VoIP specification
+                            this message adheres to. This specification is
+                            version 0.
+            timestamp(int): Optional. Set origin_server_ts (For application
+                            services only)
+        """
+        content_pack = {
+            "answer": {
+                "sdp": sdp,
+                "type": "answer"
+            },
+            "call_id": call_id,
+            "lifetime": lifetime,
+            "version": version
+        }
+        return self.client.api.send_message_event(self.room_id,
+                                                  "m.call.answer",
+                                                  content_pack,
+                                                  timestamp=timestamp)
+
+    def send_call_hangup(self, call_id, version=0, timestamp=None):
+        """
+        Sent by either party to signal their termination of the call. This can
+        be sent either once the call has has been established or before to
+        abort the call.
+
+        Args:
+            call_id (str):  A unique identifer for the call.
+            version (int):  Optional. The version of the VoIP specification
+                            this message adheres to. This specification is
+                            version 0.
+            timestamp(int): Optional. Set origin_server_ts (For application
+                            services only)
+        """
+
+        content_pack = {
+            "call_id": call_id,
+            "version": version
+        }
+        return self.client.api.send_message_event(self.room_id,
+                                                  "m.call.hangup",
+                                                  content_pack,
+                                                  timestamp=timestamp)
+
+    def is_call_supported(self):
+        return len(self._members) == 2

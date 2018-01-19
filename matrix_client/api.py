@@ -126,7 +126,6 @@ class MatrixHttpApi(object):
 
             kind (str): Specify kind="guest" to register as guest.
         """
-        query_params['kind'] = kind
         return self._send(
             "POST",
             "/register",

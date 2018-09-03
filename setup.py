@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from setuptools import setup
+from setuptools import setup, find_packages
 import codecs
 import os
 
@@ -28,10 +28,11 @@ setup(
     version=exec_file(('matrix_client', '__init__.py',))['__version__'],
     description='Client-Server SDK for Matrix',
     long_description=read_file(('README.rst',)),
+    long_description_content_type="text/x-rst",
     author='The Matrix.org Team',
     author_email='team@matrix.org',
     url='https://github.com/matrix-org/matrix-python-sdk',
-    packages=['matrix_client'],
+    packages=find_packages(),
     license='Apache License, Version 2.0',
     classifiers=[
         'Development Status :: 3 - Alpha',
@@ -44,12 +45,18 @@ setup(
     ],
     keywords='chat sdk matrix matrix.org',
     install_requires=[
-        'requests'
+        'requests',
+        'urllib3',
     ],
     setup_requires=['pytest-runner',],
     tests_require=['pytest', 'responses',],
     extras_require={
-        'test': ['tox', 'pytest', 'flake8', 'responses'],
+        'test': ['pytest', 'responses'],
         'doc': ['Sphinx==1.4.6', 'sphinx-rtd-theme==0.1.9', 'sphinxcontrib-napoleon==0.5.3'],
-    }
+        'format': ['flake8'],
+        'e2e': ['python-olm==dev', 'canonicaljson']
+    },
+    dependency_links=[
+        'git+https://github.com/poljar/python-olm.git#egg=python-olm-dev'
+    ]
 )

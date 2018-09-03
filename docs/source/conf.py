@@ -61,8 +61,8 @@ copyright = '2016, matrix.org'
 author = 'matrix.org'
 
 
-version = '0.0.5'
-release = '0.0.5'
+version = '0.4.0-dev'
+release = '0.4.0-dev'
 
 language = None
 
@@ -95,3 +95,5 @@ texinfo_documents = [
      author, 'MatrixPythonSDK', 'SDK for writing Matrix Clients in Python',
      'Miscellaneous'),
 ]
+
+autodoc_mock_imports = ["olm", "canonicaljson"]

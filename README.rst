@@ -1,7 +1,7 @@
 Matrix Client SDK for Python
 ============================
 
-.. image:: https://img.shields.io/pypi/v/matrix-client.svg?maxAge=2592000
+.. image:: https://img.shields.io/pypi/v/matrix-client.svg?maxAge=600
   :target: https://pypi.python.org/pypi/matrix-client
   :alt: Latest Version
 .. image:: https://travis-ci.org/matrix-org/matrix-python-sdk.svg?branch=master
@@ -17,12 +17,16 @@ This is a Matrix client-server SDK for Python 2.7 and 3.4+
 Community discussion on usage of this SDK and development of this SDK can be
 found at `#matrix-python-sdk:matrix.org`_.
 
+Documentation can be found at http://matrix-org.github.io/matrix-python-sdk/
+
 .. _`#matrix-python-sdk:matrix.org`: https://matrix.to/#/%23matrix-python-sdk:matrix.org
 
+
+
 Installation
-=====
+============
 Stable release
------
+--------------
 Install with pip from pypi. This will install all necessary dependencies as well.
 
 .. code:: shell
@@ -30,7 +34,7 @@ Install with pip from pypi. This will install all necessary dependencies as well
    pip install matrix_client
 
 Development version
------
+-------------------
 Install using ``setup.py`` in root project directory. This will also install all
 needed dependencies.
 
@@ -39,6 +43,14 @@ needed dependencies.
    git clone https://github.com/matrix-org/matrix-python-sdk.git
    cd matrix-python-sdk
    python setup.py install
+
+E2E development
+~~~~~~~~~~~~~~~
+
+The Olm bindings are not yet hosted on PyPI. Hence it it necessary to pass
+``--process-dependency-links`` when installing with pip, in order to fetch them
+from their Git repository. For example replace ``python setup.py install`` in
+the above instructions by ``pip install --process-dependency-links .[e2e]``.
 
 Usage
 =====

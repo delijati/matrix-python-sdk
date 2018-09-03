@@ -2,7 +2,7 @@ import pytest
 import responses
 import json
 from copy import deepcopy
-from matrix_client.client import MatrixClient, Room, User
+from matrix_client.client import MatrixClient, Room, User, CACHE
 from matrix_client.api import MATRIX_V2_API_PATH
 from . import response_examples
 try:
@@ -15,6 +15,28 @@ HOSTNAME = "http://example.com"
 
 def test_create_client():
     MatrixClient("http://example.com")
+
+
+@responses.activate
+def test_create_client_with_token():
+    user_id = "@alice:example.com"
+    token = "Dp0YKRXwx0iWDhFj7lg3DVjwsWzGcUIgARljgyAip2JD8qd5dSaW" \
+            "cxowTKEFetPulfLijAhv8eOmUSScyGcWgZyNMRTBmoJ0RFc0HotPvTBZ" \
+            "U98yKRLtat7V43aCpFmK"
+    whoami_url = HOSTNAME+MATRIX_V2_API_PATH+"/account/whoami"
+    responses.add(
+        responses.GET,
+        whoami_url,
+        body='{"user_id": "%s"}' % user_id
+    )
+    sync_response = deepcopy(response_examples.example_sync)
+    response_body = json.dumps(sync_response)
+    sync_url = HOSTNAME + MATRIX_V2_API_PATH + "/sync"
+    responses.add(responses.GET, sync_url, body=response_body)
+    MatrixClient(HOSTNAME, token=token)
+    req = responses.calls[0].request
+    assert req.method == 'GET'
+    assert whoami_url in req.url
 
 
 def test_sync_token():
@@ -64,7 +86,7 @@ def test_bad_state_events():
         "tomato": False
     }
 
-    client._process_state_event(ev, room)
+    room._process_state_event(ev)
 
 
 def test_state_event():
@@ -80,28 +102,28 @@ def test_state_event():
         "content": {}
     }
 
-    client._process_state_event(ev, room)
+    room._process_state_event(ev)
     assert room.name is None
 
     ev["content"]["name"] = "TestName"
-    client._process_state_event(ev, room)
+    room._process_state_event(ev)
     assert room.name is "TestName"
 
     ev["type"] = "m.room.topic"
-    client._process_state_event(ev, room)
+    room._process_state_event(ev)
     assert room.topic is None
 
     ev["content"]["topic"] = "TestTopic"
-    client._process_state_event(ev, room)
+    room._process_state_event(ev)
     assert room.topic is "TestTopic"
 
     ev["type"] = "m.room.aliases"
-    client._process_state_event(ev, room)
+    room._process_state_event(ev)
     assert room.aliases is None
 
     aliases = ["#foo:matrix.org", "#bar:matrix.org"]
     ev["content"]["aliases"] = aliases
-    client._process_state_event(ev, room)
+    room._process_state_event(ev)
     assert room.aliases is aliases
 
     # test member join event
@@ -109,14 +131,39 @@ def test_state_event():
     ev["content"] = {'membership': 'join', 'displayname': 'stereo',
                      'avatar_url': 'mxc://matrix.org/XXX'}
     ev["state_key"] = "@stereo:xxx.org"
-    client._process_state_event(ev, room)
+    room._process_state_event(ev)
     assert len(room._members) == 1
-    assert list(room._members.values())[0].user_id == "@stereo:xxx.org"
-    assert list(room._members.values())[0].avatar_url == "http://example.com/_matrix/media/r0/download/matrix.org/XXX"
+    assert room._members["@stereo:xxx.org"]
+    assert room._members["@stereo:xxx.org"].avatar_url == "http://example.com/_matrix/media/r0/download/matrix.org/XXX"
     # test member leave event
     ev["content"]['membership'] = 'leave'
-    client._process_state_event(ev, room)
+    room._process_state_event(ev)
     assert len(room._members) == 0
+
+    # test join_rules
+    room.invite_only = False
+    ev["type"] = "m.room.join_rules"
+    ev["content"] = {"join_rule": "invite"}
+    room._process_state_event(ev)
+    assert room.invite_only
+
+    # test guest_access
+    room.guest_access = False
+    ev["type"] = "m.room.guest_access"
+    ev["content"] = {"guest_access": "can_join"}
+    room._process_state_event(ev)
+    assert room.guest_access
+
+    # test encryption
+    room.encrypted = False
+    ev["type"] = "m.room.encryption"
+    ev["content"] = {"algorithm": "m.megolm.v1.aes-sha2"}
+    room._process_state_event(ev)
+    assert room.encrypted
+    # encrypted flag must not be cleared on configuration change
+    ev["content"] = {"algorithm": None}
+    room._process_state_event(ev)
+    assert room.encrypted
 
 
 def test_get_user():
@@ -193,7 +240,7 @@ def test_get_rooms_display_name():
 
     def add_members(api, room, num):
         for i in range(num):
-            room._mkmembers(User(api, '@frho%s:matrix.org' % i, 'ho%s' % i))
+            room._add_member('@frho%s:matrix.org' % i, 'ho%s' % i)
 
     client = MatrixClient("http://example.com")
     client.user_id = "@frho0:matrix.org"
@@ -365,3 +412,153 @@ def test_changing_other_required_power_levels():
     del expected_request["state_default"]
 
     assert json.loads(responses.calls[1].request.body) == expected_request
+
+
+@responses.activate
+def test_cache():
+    m_none = MatrixClient("http://example.com", cache_level=CACHE.NONE)
+    m_some = MatrixClient("http://example.com", cache_level=CACHE.SOME)
+    m_all = MatrixClient("http://example.com", cache_level=CACHE.ALL)
+    sync_url = HOSTNAME + MATRIX_V2_API_PATH + "/sync"
+    room_id = "!726s6s6q:example.com"
+    room_name = "The FooBar"
+    sync_response = deepcopy(response_examples.example_sync)
+
+    with pytest.raises(ValueError):
+        MatrixClient("http://example.com", cache_level=1)
+        MatrixClient("http://example.com", cache_level=5)
+        MatrixClient("http://example.com", cache_level=0.5)
+        MatrixClient("http://example.com", cache_level=-5)
+        MatrixClient("http://example.com", cache_level="foo")
+        MatrixClient("http://example.com", cache_level=0.0)
+
+    sync_response["rooms"]["join"][room_id]["state"]["events"].append(
+        {
+            "sender": "@alice:example.com",
+            "type": "m.room.name",
+            "state_key": "",
+            "content": {"name": room_name},
+        }
+    )
+
+    responses.add(responses.GET, sync_url, json.dumps(sync_response))
+    m_none._sync()
+    responses.add(responses.GET, sync_url, json.dumps(sync_response))
+    m_some._sync()
+    responses.add(responses.GET, sync_url, json.dumps(sync_response))
+    m_all._sync()
+
+    assert m_none.rooms[room_id].name is None
+    assert m_some.rooms[room_id].name == room_name
+    assert m_all.rooms[room_id].name == room_name
+
+    assert m_none.rooms[room_id]._members == m_some.rooms[room_id]._members == {}
+    assert len(m_all.rooms[room_id]._members) == 2
+    assert m_all.rooms[room_id]._members["@alice:example.com"]
+
+
+@responses.activate
+def test_room_join_rules():
+    client = MatrixClient(HOSTNAME)
+    room_id = "!UcYsUzyxTGDxLBEvLz:matrix.org"
+    room = client._mkroom(room_id)
+    assert room.invite_only is None
+    join_rules_state_path = HOSTNAME + MATRIX_V2_API_PATH + \
+        "/rooms/" + quote(room_id) + "/state/m.room.join_rules"
+
+    responses.add(responses.PUT, join_rules_state_path,
+                  json=response_examples.example_event_response)
+
+    assert room.set_invite_only(True)
+    assert room.invite_only
+
+
+@responses.activate
+def test_room_guest_access():
+    client = MatrixClient(HOSTNAME)
+    room_id = "!UcYsUzyxTGDxLBEvLz:matrix.org"
+    room = client._mkroom(room_id)
+    assert room.guest_access is None
+    guest_access_state_path = HOSTNAME + MATRIX_V2_API_PATH + \
+        "/rooms/" + quote(room_id) + "/state/m.room.guest_access"
+
+    responses.add(responses.PUT, guest_access_state_path,
+                  json=response_examples.example_event_response)
+
+    assert room.set_guest_access(True)
+    assert room.guest_access
+
+
+@responses.activate
+def test_enable_encryption():
+    pytest.importorskip('olm')
+    client = MatrixClient(HOSTNAME, encryption=True)
+
+    login_path = HOSTNAME + MATRIX_V2_API_PATH + "/login"
+    responses.add(responses.POST, login_path,
+                  json=response_examples.example_success_login_response)
+
+    upload_path = HOSTNAME + MATRIX_V2_API_PATH + '/keys/upload'
+    responses.add(responses.POST, upload_path, body='{"one_time_key_counts": {}}')
+
+    client.login("@example:localhost", "password", sync=False)
+
+    assert client.olm_device
+
+
+@responses.activate
+def test_enable_encryption_in_room():
+    client = MatrixClient(HOSTNAME)
+    room_id = "!UcYsUzyxTGDxLBEvLz:matrix.org"
+    room = client._mkroom(room_id)
+    assert not room.encrypted
+    encryption_state_path = HOSTNAME + MATRIX_V2_API_PATH + \
+        "/rooms/" + quote(room_id) + "/state/m.room.encryption"
+
+    responses.add(responses.PUT, encryption_state_path,
+                  json=response_examples.example_event_response)
+
+    assert room.enable_encryption()
+    assert room.encrypted
+
+
+@responses.activate
+def test_detect_encryption_state():
+    client = MatrixClient(HOSTNAME, encryption=True)
+    room_id = "!UcYsUzyxTGDxLBEvLz:matrix.org"
+
+    encryption_state_path = HOSTNAME + MATRIX_V2_API_PATH + \
+        "/rooms/" + quote(room_id) + "/state/m.room.encryption"
+    responses.add(responses.GET, encryption_state_path,
+                  json={"algorithm": "m.megolm.v1.aes-sha2"})
+    responses.add(responses.GET, encryption_state_path,
+                  json={}, status=404)
+
+    room = client._mkroom(room_id)
+    assert room.encrypted
+
+    room = client._mkroom(room_id)
+    assert not room.encrypted
+
+
+@responses.activate
+def test_one_time_keys_sync():
+    client = MatrixClient(HOSTNAME, encryption=True)
+    sync_url = HOSTNAME + MATRIX_V2_API_PATH + "/sync"
+    sync_response = deepcopy(response_examples.example_sync)
+    payload = {'dummy': 1}
+    sync_response["device_one_time_keys_count"] = payload
+    sync_response['rooms']['join'] = {}
+
+    class DummyDevice:
+
+        def update_one_time_key_counts(self, payload):
+            self.payload = payload
+
+    device = DummyDevice()
+    client.olm_device = device
+
+    responses.add(responses.GET, sync_url, json=sync_response)
+
+    client._sync()
+    assert device.payload == payload

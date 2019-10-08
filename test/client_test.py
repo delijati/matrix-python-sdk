@@ -43,7 +43,7 @@ def test_sync_token():
     client = MatrixClient("http://example.com")
     assert client.get_sync_token() is None
     client.set_sync_token("FAKE_TOKEN")
-    assert client.get_sync_token() is "FAKE_TOKEN"
+    assert client.get_sync_token() == "FAKE_TOKEN"
 
 
 def test__mkroom():
@@ -99,7 +99,8 @@ def test_state_event():
 
     ev = {
         "type": "m.room.name",
-        "content": {}
+        "content": {},
+        "event_id": "$10000000000000AAAAA:matrix.org"
     }
 
     room._process_state_event(ev)
@@ -107,7 +108,7 @@ def test_state_event():
 
     ev["content"]["name"] = "TestName"
     room._process_state_event(ev)
-    assert room.name is "TestName"
+    assert room.name == "TestName"
 
     ev["type"] = "m.room.topic"
     room._process_state_event(ev)
@@ -115,7 +116,7 @@ def test_state_event():
 
     ev["content"]["topic"] = "TestTopic"
     room._process_state_event(ev)
-    assert room.topic is "TestTopic"
+    assert room.topic == "TestTopic"
 
     ev["type"] = "m.room.aliases"
     room._process_state_event(ev)
@@ -153,6 +154,13 @@ def test_state_event():
     ev["content"] = {"guest_access": "can_join"}
     room._process_state_event(ev)
     assert room.guest_access
+
+    # test malformed event (check does not throw exception)
+    room.guest_access = False
+    ev["type"] = "m.room.guest_access"
+    ev["content"] = {}
+    room._process_state_event(ev)
+    assert not room.guest_access
 
     # test encryption
     room.encrypted = False
@@ -508,6 +516,7 @@ def test_enable_encryption():
 
 @responses.activate
 def test_enable_encryption_in_room():
+    pytest.importorskip('olm')
     client = MatrixClient(HOSTNAME)
     room_id = "!UcYsUzyxTGDxLBEvLz:matrix.org"
     room = client._mkroom(room_id)
@@ -524,6 +533,7 @@ def test_enable_encryption_in_room():
 
 @responses.activate
 def test_detect_encryption_state():
+    pytest.importorskip('olm')
     client = MatrixClient(HOSTNAME, encryption=True)
     room_id = "!UcYsUzyxTGDxLBEvLz:matrix.org"
 
@@ -543,6 +553,7 @@ def test_detect_encryption_state():
 
 @responses.activate
 def test_one_time_keys_sync():
+    pytest.importorskip('olm')
     client = MatrixClient(HOSTNAME, encryption=True)
     sync_url = HOSTNAME + MATRIX_V2_API_PATH + "/sync"
     sync_response = deepcopy(response_examples.example_sync)

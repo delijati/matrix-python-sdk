@@ -21,7 +21,15 @@ Documentation can be found at http://matrix-org.github.io/matrix-python-sdk/
 
 .. _`#matrix-python-sdk:matrix.org`: https://matrix.to/#/%23matrix-python-sdk:matrix.org
 
+Project Status
+--------------
 
+This sdk is currently lightly maintained (without any sort of official or
+semi-official "lead" maintainer). In general pull-requests might be reviewed but
+little to no new-feature or bug-fix development is happening outside of that.
+For more info or to volunteer to help, please see
+https://github.com/matrix-org/matrix-python-sdk/issues/279. Or come chat in
+`#matrix-python-sdk:matrix.org`_.
 
 Installation
 ============
@@ -44,14 +52,6 @@ needed dependencies.
    cd matrix-python-sdk
    python setup.py install
 
-E2E development
-~~~~~~~~~~~~~~~
-
-The Olm bindings are not yet hosted on PyPI. Hence it it necessary to pass
-``--process-dependency-links`` when installing with pip, in order to fetch them
-from their Git repository. For example replace ``python setup.py install`` in
-the above instructions by ``pip install --process-dependency-links .[e2e]``.
-
 Usage
 =====
 The SDK provides 2 layers of interaction. The low-level layer just wraps the
@@ -70,7 +70,7 @@ Client:
     token = client.register_with_password(username="foobar", password="monkey")
 
     # Existing user
-    token = client.login_with_password(username="foobar", password="monkey")
+    token = client.login(username="foobar", password="monkey")
 
     room = client.create_room("my_room_alias")
     room.send_text("Hello!")
